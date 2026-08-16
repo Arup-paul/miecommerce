@@ -12,6 +12,7 @@ class Product extends Model
 
     protected $fillable = [
         'category_id',
+        'miaccounts_external_id',
         'name',
         'slug',
         'short_description',

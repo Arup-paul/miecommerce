@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MiAccountsReceiverController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -16,4 +17,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
+});
+
+Route::middleware('miaccounts.secret')->prefix('miaccounts')->group(function () {
+    Route::get('pending-products', [MiAccountsReceiverController::class, 'pendingProducts']);
+    Route::post('products', [MiAccountsReceiverController::class, 'products']);
+    Route::post('order-status', [MiAccountsReceiverController::class, 'orderStatus']);
 });
