@@ -23,4 +23,6 @@ Route::middleware('miaccounts.secret')->prefix('miaccounts')->group(function () 
     Route::get('pending-products', [MiAccountsReceiverController::class, 'pendingProducts']);
     Route::post('products', [MiAccountsReceiverController::class, 'products']);
     Route::post('order-status', [MiAccountsReceiverController::class, 'orderStatus']);
+    Route::get('pending-orders', [MiAccountsReceiverController::class, 'pendingOrders']);
+    Route::post('orders/claim', [MiAccountsReceiverController::class, 'claimOrder']);
 });

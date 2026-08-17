@@ -18,6 +18,26 @@
             <dd class="text-gray-900 font-medium capitalize">{{ str_replace('_', ' ', $order->payment_method) }}</dd>
         </dl>
 
+        @if (empty($order->billing) && empty($order->shipping))
+            <h2 class="mt-6 text-lg font-semibold text-gray-900">Delivery Address</h2>
+            <p class="mt-2 text-sm text-gray-700">
+                {{ $order->customer_address }}
+                @if (! empty($order->shipping_city)), {{ $order->shipping_city }}@endif
+                @if (! empty($order->shipping_area)), {{ $order->shipping_area }}@endif
+            </p>
+        @else
+            <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">Billing Address</h2>
+                    @include('storefront.partials.address-block', ['address' => $order->billing])
+                </div>
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">Shipping Address</h2>
+                    @include('storefront.partials.address-block', ['address' => $order->shipping])
+                </div>
+            </div>
+        @endif
+
         <h2 class="mt-6 text-lg font-semibold text-gray-900">Items</h2>
         <table class="mt-2 min-w-full divide-y divide-gray-200">
             <thead>

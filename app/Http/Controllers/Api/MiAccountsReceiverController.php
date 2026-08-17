@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Address;
 use App\Models\Category;
+use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 class MiAccountsReceiverController extends Controller
@@ -179,5 +182,138 @@ class MiAccountsReceiverController extends Controller
         Log::info('MiAccounts order status push received', ['payload' => $request->all()]);
 
         return response()->json(['status' => true]);
+    }
+
+    /**
+     * List orders MiAccounts has not yet claimed. Polled on a schedule. Read-only.
+     *
+     * @param Request $request
+     */
+    public function pendingOrders(Request $request)
+    {
+        $limit = $this->pullLimit($request);
+
+        $orders = Order::with(['items', 'billing', 'shipping'])
+            ->whereNull('miaccounts_external_id')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'status' => true,
+            'data' => $orders->map(function (Order $order) {
+                return $this->orderPayload($order);
+            }),
+        ]);
+    }
+
+    /**
+     * The pull batch size from the request, clamped to a safe range.
+     *
+     * @param Request $request
+     */
+    private function pullLimit(Request $request)
+    {
+        $limit = (int) $request->query('limit', 50);
+
+        if ($limit <= 0 || $limit > 200) {
+            return 50;
+        }
+
+        return $limit;
+    }
+
+    /**
+     * Mark one order as claimed by MiAccounts, so the next pull no longer serves it.
+     *
+     * @param Request $request
+     */
+    public function claimOrder(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'external_order_id' => ['required', 'integer'],
+            'sales_order_master_id' => ['required'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()], 422);
+        }
+
+        $data = $validator->validated();
+        $order = Order::find($data['external_order_id']);
+
+        if (empty($order)) {
+            return response()->json(['status' => false, 'message' => 'Order not found.'], 404);
+        }
+
+        $order->miaccounts_external_id = $data['sales_order_master_id'];
+        $order->save();
+
+        return response()->json(['status' => true]);
+    }
+
+    /**
+     * Shape one order into the same payload the push route would have sent.
+     *
+     * @param Order $order
+     */
+    private function orderPayload(Order $order)
+    {
+        return [
+            'external_order_id' => $order->id,
+            'order_number' => $order->order_number,
+            'customer' => [
+                'name' => $order->customer_name,
+                'mobile' => $order->customer_mobile,
+                'email' => $order->customer_email,
+                'address' => $order->customer_address,
+                'city' => $order->shipping_city,
+                'area' => $order->shipping_area,
+                'billing_address' => $this->addressPayload($order->billing),
+                'shipping_address' => $this->addressPayload($order->shipping),
+            ],
+            'items' => $order->items->map(function ($item) {
+                return [
+                    'external_product_id' => $item->product_id,
+                    'quantity' => (float) $item->quantity,
+                    'rate' => (float) $item->rate,
+                    'vat_percent' => (float) $item->vat_percent,
+                    'vat_amount' => (float) $item->vat_amount,
+                    'discount_percent' => 0,
+                    'discount_amount' => (float) $item->discount_amount,
+                    'total_amount' => (float) $item->total_amount,
+                ];
+            })->values(),
+            'subtotal_amount' => (float) $order->subtotal_amount,
+            'vat_amount' => (float) $order->vat_amount,
+            'discount_amount' => (float) $order->discount_amount,
+            'coupon_code' => $order->coupon_code,
+            'shipping_amount' => (float) $order->shipping_amount,
+            'total_amount' => (float) $order->total_amount,
+            'payment_method' => $order->payment_method,
+            'payment_status' => $order->payment_status,
+            'order_status' => $order->order_status,
+            'notes' => $order->notes,
+        ];
+    }
+
+    /**
+     * Shape a saved address into the payload's shared address shape, null when absent.
+     *
+     * @param Address|null $address
+     */
+    private function addressPayload($address)
+    {
+        if (empty($address)) {
+            return null;
+        }
+
+        return [
+            'address' => $address->address_line,
+            'city' => $address->city,
+            'area' => $address->area,
+            'recipient_name' => $address->recipient_name,
+            'phone' => $address->phone,
+        ];
     }
 }

@@ -28,10 +28,21 @@
                             <span class="inline-flex items-center justify-center rounded-full bg-indigo-600 text-white text-xs w-5 h-5 ml-1">{{ count(session('cart')) }}</span>
                         @endif
                     </a>
+                    @guest
+                        <a href="{{ route('login') }}" class="text-gray-600 hover:text-gray-900">Login</a>
+                    @endguest
+
                     @auth
-                        <a href="{{ route('admin.products.index') }}" class="text-gray-600 hover:text-gray-900">Admin</a>
-                    @else
-                        <a href="{{ route('login') }}" class="text-gray-600 hover:text-gray-900">Admin Login</a>
+                        @if (Auth::user()->isAdmin())
+                            <a href="{{ route('admin.products.index') }}" class="text-gray-600 hover:text-gray-900">Admin</a>
+                        @endif
+
+                        <span class="text-gray-600">{{ Auth::user()->name }}</span>
+
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button type="submit" class="text-gray-600 hover:text-gray-900">Logout</button>
+                        </form>
                     @endauth
                 </nav>
             </div>
