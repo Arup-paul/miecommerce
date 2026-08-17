@@ -9,7 +9,7 @@ use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -175,13 +175,59 @@ class MiAccountsReceiverController extends Controller
     }
 
     /**
-     * Receive an order status push from MiAccounts. Real update lands in P6.
+     * Receive a batch of order statuses from MiAccounts and apply them by external id.
+     *
+     * MiAccounts sends every status it owes in one call, so an id this
+     * storefront no longer knows is reported back rather than failing the
+     * batch — the rest still apply. Stores the raw ERP status string as-is,
+     * with no vocabulary translation.
      */
     public function orderStatus(Request $request): JsonResponse
     {
-        Log::info('MiAccounts order status push received', ['payload' => $request->all()]);
+        $validator = Validator::make($request->all(), [
+            'orders' => ['required', 'array', 'min:1'],
+            'orders.*.external_order_id' => ['required'],
+            'orders.*.order_status' => ['required', 'string'],
+        ]);
 
-        return response()->json(['status' => true]);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()], 422);
+        }
+
+        $incoming = collect($validator->validated()['orders']);
+        $orders = $this->ordersByExternalId($incoming);
+        $applied = [];
+        $missing = [];
+
+        foreach ($incoming as $entry) {
+            $order = $orders->get((string) $entry['external_order_id']);
+
+            if ($order === null) {
+                $missing[] = $entry['external_order_id'];
+
+                continue;
+            }
+
+            $order->order_status = $entry['order_status'];
+            $order->save();
+            $applied[] = $entry['external_order_id'];
+        }
+
+        return response()->json([
+            'status' => true,
+            'applied' => $applied,
+            'missing' => $missing,
+        ]);
+    }
+
+    /**
+     * Load every targeted order up front, keyed by the id MiAccounts knows it by.
+     */
+    private function ordersByExternalId(Collection $incoming): Collection
+    {
+        return Order::whereIn('miaccounts_external_id', $incoming->pluck('external_order_id')->unique()->all())
+            ->get()
+            ->keyBy(fn (Order $order) => (string) $order->miaccounts_external_id);
     }
 
     /**
